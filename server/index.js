@@ -2,10 +2,13 @@
 const express = require('express');
 const cors = require('cors')
 
-const http = require('http');
 const fs = require('fs');
 const multer = require('multer');
 const csv = require('fast-csv');
+const async = require('async');
+
+const probe = require('probe-image-size');
+const urlExists = require('url-exists');
 
 const Router = express.Router;
 
@@ -38,8 +41,67 @@ router.post('/', upload.single('file'), function (req, res) {
       fs.unlinkSync(path);   // remove temp file
 
       //process "fileRows" and respond
-      console.log(fileRows.shift())//remove header row
-      res.send(fileRows)
+      fileRows.shift()//remove header row
+
+      //create object
+      let responseData = { data: [], errors: [] }
+
+      const data = (fileRows.map((fileRow, index) => {
+
+        let imageSize = {}
+
+        let urlExist = urlExists(fileRow[2], async (_, exists) => {
+          return exists;
+        })
+        setTimeout(() => { }, 1000)
+
+        if (urlExist) {
+          const imageData = probe(fileRow[2])
+            .then((response) => {
+
+              return {
+                id: fileRow[0],
+                name: fileRow[1],
+                picture: {
+                  url: fileRow[2],
+                  width: response.width,
+                  height: response.height,
+                }
+              }
+
+            })
+            .catch(err => {
+              responseData.errors.push(index + ' image not found')
+
+            })
+
+          return {
+            id: fileRow[0],
+            name: fileRow[1],
+            picture: {
+              url: fileRow[2],
+              width: imageData.width,
+              height: imageData.height,
+            }
+          }
+        }
+
+        responseData.errors.push(index + ' image not found');
+        return {
+          id: fileRow[0],
+          name: fileRow[1],
+          picture: {
+            url: fileRow[2],
+            width: 'Not found',
+            height: 'Not found',
+          }
+        }
+
+      }))
+
+      responseData.data = [...data]
+
+      res.send(responseData)
     })
 });
 
